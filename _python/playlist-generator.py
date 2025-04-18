@@ -6,11 +6,7 @@ SDXC Card Playlist Generator
 This script creates DJ-like flow-optimized playlists and a discovery playlist
 from the music already on your SDXC card.
 
-Features:
-1. Creates genre-based playlists with DJ-like flow
-2. Builds a discovery playlist of tracks you likely haven't heard
-3. Maps similar genres into standardized categories
-4. Organizes tracks for a smooth listening experience
+Updated to use the new directory structure and relative paths.
 """
 
 import os
@@ -23,10 +19,8 @@ from collections import defaultdict
 from pathlib import Path
 
 # Configuration
-SDXC_MOUNT = "/mnt/sdcard"
-SDXC_CD = f"{SDXC_MOUNT}/CD"
-SDXC_HIRES = f"{SDXC_MOUNT}/Hires"
-PLAYLIST_DIR = f"{SDXC_MOUNT}/Playlists"
+NAS_ROOT_CD = "/home/music/drobos/hibiki/Media/Music/Lossless/FLAC 16-Bit CD"
+NAS_ROOT_HIRES = "/home/music/drobos/hibiki/Media/Music/Lossless/FLAC 24-Bit HiRes"
 TRACK_COUNT = 50  # Tracks per playlist
 
 # Genre mapping to consolidate similar genres
@@ -90,14 +84,14 @@ GENRE_MAPPING = {
     "cool jazz": "Jazz",
     
     # Soul/Funk
-    "soul": "Soul/Funk",
-    "funk": "Soul/Funk",
-    "neo-soul": "Soul/Funk",
-    "neo soul": "Soul/Funk",
-    "disco": "Soul/Funk",
-    "motown": "Soul/Funk",
-    "r&b": "Soul/Funk",
-    "rhythm and blues": "Soul/Funk",
+    "soul": "Soul-Funk",
+    "funk": "Soul-Funk",
+    "neo-soul": "Soul-Funk",
+    "neo soul": "Soul-Funk",
+    "disco": "Soul-Funk",
+    "motown": "Soul-Funk",
+    "r&b": "Soul-Funk",
+    "rhythm and blues": "Soul-Funk",
     
     # Rock
     "rock": "Rock",
@@ -124,8 +118,8 @@ GENRE_MAPPING = {
     
     # Miscellaneous
     "world": "World",
-    "reggae": "Reggae/Dub",
-    "dub": "Reggae/Dub",
+    "reggae": "Reggae-Dub",
+    "dub": "Reggae-Dub",
     "folk": "Folk",
     "country": "Country",
     "blues": "Blues",
@@ -142,25 +136,30 @@ genre_tracks = defaultdict(list)
 track_info = {}
 play_count_data = {}
 
-def scan_sdxc_for_tracks():
+def scan_sdxc_for_tracks(mount_dir):
     """Scan the SDXC card for music files and build a track database"""
     global sdxc_tracks, genre_tracks
+    
+    # New directory structure
+    sdxc_cd = os.path.join(mount_dir, "Music", "CD")
+    sdxc_hires = os.path.join(mount_dir, "Music", "Hires")
+    playlist_dir = os.path.join(mount_dir, "Music", "Playlists")
     
     print("Scanning SDXC card for music files...")
     
     music_extensions = ('.flac', '.mp3', '.wav', '.aiff', '.alac', '.ape', '.dsf', '.dff')
     
     # Scan CD directory
-    if os.path.exists(SDXC_CD):
-        for root, dirs, files in os.walk(SDXC_CD):
+    if os.path.exists(sdxc_cd):
+        for root, dirs, files in os.walk(sdxc_cd):
             for file in files:
                 if file.lower().endswith(music_extensions):
                     track_path = os.path.join(root, file)
                     sdxc_tracks.append(track_path)
     
     # Scan HiRes directory
-    if os.path.exists(SDXC_HIRES):
-        for root, dirs, files in os.walk(SDXC_HIRES):
+    if os.path.exists(sdxc_hires):
+        for root, dirs, files in os.walk(sdxc_hires):
             for file in files:
                 if file.lower().endswith(music_extensions):
                     track_path = os.path.join(root, file)
@@ -169,9 +168,11 @@ def scan_sdxc_for_tracks():
     print(f"Found {len(sdxc_tracks)} music tracks on SDXC card")
     
     # Create playlist directory if it doesn't exist
-    os.makedirs(PLAYLIST_DIR, exist_ok=True)
+    os.makedirs(playlist_dir, exist_ok=True)
+    
+    return sdxc_cd, sdxc_hires, playlist_dir
 
-def extract_track_info_from_paths():
+def extract_track_info_from_paths(sdxc_cd, sdxc_hires):
     """Extract track information from file paths and names"""
     global sdxc_tracks, track_info, genre_tracks
     
@@ -210,11 +211,20 @@ def extract_track_info_from_paths():
         directory = os.path.dirname(track_path)
         parent_dir = os.path.basename(directory)
         
-        # Get path relative to SDXC root
-        if track_path.startswith(SDXC_CD):
-            relative_path = os.path.relpath(track_path, SDXC_CD)
+        # Determine if track is in CD or HiRes
+        is_hires = False
+        is_cd = False
+        
+        # Get path relative to SDXC root - check for new structure
+        if track_path.startswith(sdxc_hires):
+            is_hires = True
+            relative_path = os.path.relpath(track_path, sdxc_hires)
+        elif track_path.startswith(sdxc_cd):
+            is_cd = True
+            relative_path = os.path.relpath(track_path, sdxc_cd)
         else:
-            relative_path = os.path.relpath(track_path, SDXC_HIRES)
+            # Skip tracks outside of expected directories
+            continue
         
         # Split path components for artist/album guessing
         path_parts = relative_path.split(os.path.sep)
@@ -244,7 +254,9 @@ def extract_track_info_from_paths():
             'album': album,
             'title': title_clean or title,
             'track_number': track_number,
-            'genre': genre
+            'genre': genre,
+            'is_hires': is_hires,
+            'is_cd': is_cd
         }
         
         # Add to genre tracks
@@ -333,7 +345,7 @@ def get_track_play_count(track_path):
     
     return 0  # Default to 0 if no match found
 
-def create_flow_optimized_playlist(genre, count=50):
+def create_flow_optimized_playlist(genre, count, playlist_dir, sdxc_cd, sdxc_hires):
     """Create a DJ-like flow-optimized playlist for a genre"""
     print(f"Creating flow-optimized playlist for {genre} ({count} tracks)...")
     
@@ -390,7 +402,9 @@ def create_flow_optimized_playlist(genre, count=50):
                 'album': info['album'],
                 'track_number': track_number,
                 'energy': energy,
-                'play_count': play_count
+                'play_count': play_count,
+                'is_hires': info['is_hires'],
+                'is_cd': info['is_cd']
             })
     
     # Limit to top tracks by play count if we have too many
@@ -480,24 +494,37 @@ def create_flow_optimized_playlist(genre, count=50):
     final_tracks = unique_tracks[:count]  # Limit to requested count
     
     # Create M3U playlist
-    playlist_name = f"{genre}_Top{len(final_tracks)}"
-    playlist_name = playlist_name.replace("/", "-")
-    playlist_path = os.path.join(PLAYLIST_DIR, f"{playlist_name}.m3u")
+    # Replace any slashes in genre name with dashes to avoid directory issues
+    safe_genre = genre.replace('/', '-')
+    playlist_name = f"{safe_genre}_Top{len(final_tracks)}"
+    playlist_path = os.path.join(playlist_dir, f"{playlist_name}.m3u")
     
     with open(playlist_path, 'w', encoding='utf-8') as m3u:
         # Write M3U header
         m3u.write("#EXTM3U\n")
         
-        # Write tracks
+        # Write tracks with relative paths
         for track in final_tracks:
+            track_path = track['path']
+            
+            # Convert absolute path to relative path from playlist directory
+            if track['is_hires']:
+                # For HiRes tracks: ../Hires/Artist/Album/track.flac
+                rel_path = os.path.relpath(track_path, sdxc_hires)
+                rel_track_path = os.path.join("../Hires", rel_path)
+            else:
+                # For CD tracks: ../CD/Artist/Album/track.flac
+                rel_path = os.path.relpath(track_path, sdxc_cd)
+                rel_track_path = os.path.join("../CD", rel_path)
+            
             # Add track to playlist with metadata
             m3u.write(f"#EXTINF:-1,{track['artist']} - {track['title']}\n")
-            m3u.write(f"{track['path']}\n")
+            m3u.write(f"{rel_track_path}\n")
     
     print(f"Created {genre} playlist with {len(final_tracks)} tracks: {playlist_path}")
     return True
 
-def create_discovery_playlist(count=50):
+def create_discovery_playlist(count, playlist_dir, sdxc_cd, sdxc_hires):
     """Create a discovery playlist of tracks with low or no play counts"""
     print(f"Creating discovery playlist with {count} tracks...")
     
@@ -514,7 +541,9 @@ def create_discovery_playlist(count=50):
                 'title': info['title'],
                 'album': info['album'],
                 'genre': info['genre'],
-                'play_count': play_count
+                'play_count': play_count,
+                'is_hires': info['is_hires'],
+                'is_cd': info['is_cd']
             })
     
     # Sort by play count (lowest first)
@@ -582,59 +611,81 @@ def create_discovery_playlist(count=50):
     selected_tracks = selected_tracks[:count]
     
     # Create M3U playlist
-    playlist_path = os.path.join(PLAYLIST_DIR, "Discovery_50.m3u")
+    playlist_path = os.path.join(playlist_dir, "Discovery_50.m3u")
     
     with open(playlist_path, 'w', encoding='utf-8') as m3u:
         # Write M3U header
         m3u.write("#EXTM3U\n")
         
-        # Write tracks
+        # Write tracks with relative paths
         for track in selected_tracks:
+            track_path = track['path']
+            
+            # Convert absolute path to relative path from playlist directory
+            if track['is_hires']:
+                # For HiRes tracks: ../Hires/Artist/Album/track.flac
+                rel_path = os.path.relpath(track_path, sdxc_hires)
+                rel_track_path = os.path.join("../Hires", rel_path)
+            else:
+                # For CD tracks: ../CD/Artist/Album/track.flac
+                rel_path = os.path.relpath(track_path, sdxc_cd)
+                rel_track_path = os.path.join("../CD", rel_path)
+            
             # Add track to playlist with metadata
             m3u.write(f"#EXTINF:-1,{track['artist']} - {track['title']}\n")
-            m3u.write(f"{track['path']}\n")
+            m3u.write(f"{rel_track_path}\n")
     
     print(f"Created discovery playlist with {len(selected_tracks)} tracks: {playlist_path}")
     return True
 
 def main():
     # Parse command line arguments
-    if len(sys.argv) > 1:
-        tracks_excel = sys.argv[1]
-    else:
-        tracks_excel = None  # Optional
-    
-    # Step 1: Scan SDXC for tracks
-    scan_sdxc_for_tracks()
-    
-    if len(sdxc_tracks) == 0:
-        print("No tracks found on SDXC card. Make sure it's mounted at /mnt/sdcard")
+    if len(sys.argv) < 2:
+        print("Usage: python playlist-generator.py <tracks_excel> [<mount_directory>]")
         sys.exit(1)
     
-    # Step 2: Extract track info from paths
-    extract_track_info_from_paths()
+    tracks_excel = sys.argv[1]
     
-    # Step 3: Load play count data if available
+    # Get mount directory from command line or use default
+    mount_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/SP3000Util/mnt")
+    
+    # Check if the mount directory exists
+    if not os.path.exists(mount_dir):
+        print(f"Error: Mount directory {mount_dir} does not exist")
+        sys.exit(1)
+    
+    # Scan SDXC card for tracks
+    sdxc_cd, sdxc_hires, playlist_dir = scan_sdxc_for_tracks(mount_dir)
+    
+    if len(sdxc_tracks) == 0:
+        print(f"No tracks found on SDXC card at {mount_dir}/Music")
+        print("Make sure the SDXC card is mounted and contains music files")
+        sys.exit(1)
+    
+    # Extract track info from paths
+    extract_track_info_from_paths(sdxc_cd, sdxc_hires)
+    
+    # Load play count data if available
     load_play_count_data(tracks_excel)
     
-    # Step 4: Create genre playlists
-    genres_to_create = ["Electronic", "Jazz", "Hip-Hop", "House", "Soul/Funk"]
+    # Create genre playlists
+    genres_to_create = ["Electronic", "Jazz", "Hip-Hop", "House", "Soul-Funk"]
     created_count = 0
     
     for genre in genres_to_create:
-        if create_flow_optimized_playlist(genre, TRACK_COUNT):
+        if create_flow_optimized_playlist(genre, TRACK_COUNT, playlist_dir, sdxc_cd, sdxc_hires):
             created_count += 1
     
-    # Step 5: Create discovery playlist
-    create_discovery_playlist(TRACK_COUNT)
+    # Create discovery playlist
+    create_discovery_playlist(TRACK_COUNT, playlist_dir, sdxc_cd, sdxc_hires)
     
     # Summary
     print(f"\nCreated {created_count} genre playlists and 1 discovery playlist")
-    print(f"All playlists are saved in: {PLAYLIST_DIR}")
+    print(f"All playlists are saved in: {playlist_dir}")
     
     # List all playlists
     print("\nGenerated playlists:")
-    for playlist_file in os.listdir(PLAYLIST_DIR):
+    for playlist_file in os.listdir(playlist_dir):
         if playlist_file.endswith('.m3u'):
             print(f"  - {playlist_file}")
 

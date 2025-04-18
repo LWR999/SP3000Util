@@ -7,7 +7,7 @@ This script:
 1. Looks in the _playlists directory for Excel files
 2. Processes each track in each playlist
 3. Copies the entire album containing each track from NAS to SDXC
-4. Builds M3U files that describe each playlist
+4. Builds M3U files that describe each playlist with relative paths
 """
 
 import os
@@ -21,33 +21,39 @@ import re
 # Configuration
 NAS_ROOT_CD = "/home/music/drobos/hibiki/Media/Music/Lossless/FLAC 16-Bit CD"
 NAS_ROOT_HIRES = "/home/music/drobos/hibiki/Media/Music/Lossless/FLAC 24-Bit HiRes"
-SDXC_MOUNT = "/mnt/sdcard"
-SDXC_CD = f"{SDXC_MOUNT}/CD"
-SDXC_HIRES = f"{SDXC_MOUNT}/Hires"
-PLAYLIST_DIR = f"{SDXC_MOUNT}/Playlists"
 
-def ensure_directories_exist():
+def ensure_directories_exist(mount_dir):
     """Ensure required directories exist"""
-    os.makedirs(SDXC_CD, exist_ok=True)
-    os.makedirs(SDXC_HIRES, exist_ok=True)
-    os.makedirs(PLAYLIST_DIR, exist_ok=True)
+    sdxc_cd = os.path.join(mount_dir, "Music", "CD")
+    sdxc_hires = os.path.join(mount_dir, "Music", "Hires")
+    playlist_dir = os.path.join(mount_dir, "Music", "Playlists")
+    
+    os.makedirs(sdxc_cd, exist_ok=True)
+    os.makedirs(sdxc_hires, exist_ok=True)
+    os.makedirs(playlist_dir, exist_ok=True)
+    
+    return sdxc_cd, sdxc_hires, playlist_dir
 
 def sanitize_filename(name):
     """Remove problematic characters from filenames"""
     # Replace characters that might cause issues
     sanitized = re.sub(r'[\\/*?:"<>|]', '_', name)
+    # Replace forward slash with dash (important for genres like Soul/Funk)
+    sanitized = sanitized.replace('/', '-')
     # Remove leading/trailing spaces and dots
     sanitized = sanitized.strip('. ')
     return sanitized
 
-def process_playlist_file(playlist_file):
+def process_playlist_file(playlist_file, mount_dir):
     """Process a single playlist Excel file and create an M3U playlist"""
+    sdxc_cd, sdxc_hires, playlist_dir = ensure_directories_exist(mount_dir)
+    
     print(f"\nProcessing playlist: {os.path.basename(playlist_file)}")
     
     # Generate output playlist name from Excel filename
     playlist_name = os.path.splitext(os.path.basename(playlist_file))[0]
     playlist_name = sanitize_filename(playlist_name)
-    output_m3u = os.path.join(PLAYLIST_DIR, f"{playlist_name}.m3u")
+    output_m3u = os.path.join(playlist_dir, f"{playlist_name}.m3u")
     
     # Check if Excel file exists
     if not os.path.exists(playlist_file):
@@ -122,18 +128,19 @@ def process_playlist_file(playlist_file):
                 title = str(row.get(title_column, "")) if title_column and not pd.isna(row.get(title_column)) else os.path.basename(track_path)
                 artist = str(row.get(artist_column, "")) if artist_column and not pd.isna(row.get(artist_column)) else ""
                 
-                # Map paths from NAS to SDXC
-                if album_path.startswith(NAS_ROOT_CD):
-                    rel_path = album_path[len(NAS_ROOT_CD):].lstrip('/')
-                    sdxc_album_path = os.path.join(SDXC_CD, rel_path)
-                    sdxc_track_path = os.path.join(SDXC_CD, track_path[len(NAS_ROOT_CD):].lstrip('/'))
-                elif album_path.startswith(NAS_ROOT_HIRES):
+                # Map paths from NAS to SDXC - using relative paths for playlists
+                is_hires = album_path.startswith(NAS_ROOT_HIRES)
+                
+                if is_hires:
                     rel_path = album_path[len(NAS_ROOT_HIRES):].lstrip('/')
-                    sdxc_album_path = os.path.join(SDXC_HIRES, rel_path)
-                    sdxc_track_path = os.path.join(SDXC_HIRES, track_path[len(NAS_ROOT_HIRES):].lstrip('/'))
+                    sdxc_album_path = os.path.join(sdxc_hires, rel_path)
+                    # Create relative path for M3U (relative from Playlists directory)
+                    sdxc_track_path = os.path.join("../Hires", track_path[len(NAS_ROOT_HIRES):].lstrip('/'))
                 else:
-                    print(f"  Error: Could not map path: {track_path}")
-                    continue
+                    rel_path = album_path[len(NAS_ROOT_CD):].lstrip('/')
+                    sdxc_album_path = os.path.join(sdxc_cd, rel_path)
+                    # Create relative path for M3U (relative from Playlists directory)
+                    sdxc_track_path = os.path.join("../CD", track_path[len(NAS_ROOT_CD):].lstrip('/'))
                 
                 # Copy album if not already copied
                 if album_path not in copied_albums:
@@ -163,7 +170,7 @@ def process_playlist_file(playlist_file):
                     # Mark album as processed
                     copied_albums.add(album_path)
                 
-                # Add track to playlist
+                # Add track to playlist with relative path
                 m3u.write(f"#EXTINF:-1,{artist} - {title}\n")
                 m3u.write(f"{sdxc_track_path}\n")
                 
@@ -183,7 +190,7 @@ def process_playlist_file(playlist_file):
         traceback.print_exc()
         return False
 
-def process_all_playlists(playlists_dir):
+def process_all_playlists(playlists_dir, mount_dir):
     """Process all Excel files in the playlists directory"""
     print(f"Processing all playlists in: {playlists_dir}")
     
@@ -200,7 +207,7 @@ def process_all_playlists(playlists_dir):
     # Process each playlist file
     successful = 0
     for playlist_file in playlist_files:
-        if process_playlist_file(playlist_file):
+        if process_playlist_file(playlist_file, mount_dir):
             successful += 1
     
     print(f"\nSuccessfully processed {successful} of {len(playlist_files)} playlists")
@@ -208,27 +215,30 @@ def process_all_playlists(playlists_dir):
 
 def main():
     # Check command line arguments
-    if len(sys.argv) != 2:
-        print("Usage: python process-playlists.py <playlists_directory>")
+    if len(sys.argv) < 2:
+        print("Usage: python process-playlists.py <playlists_directory> [<mount_directory>]")
         sys.exit(1)
     
     playlists_dir = sys.argv[1]
+    
+    # Get mount directory from command line or use default
+    mount_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/SP3000Util/mnt")
     
     # Check if playlists directory exists
     if not os.path.isdir(playlists_dir):
         print(f"Error: Playlists directory not found: {playlists_dir}")
         sys.exit(1)
     
-    # Check if SDXC card is mounted
-    if not os.path.ismount(SDXC_MOUNT):
-        print(f"Error: SDXC card not mounted at {SDXC_MOUNT}")
+    # Check if mount directory exists
+    if not os.path.isdir(mount_dir):
+        print(f"Error: Mount directory not found: {mount_dir}")
         sys.exit(1)
     
     # Ensure required directories exist
-    ensure_directories_exist()
+    sdxc_cd, sdxc_hires, playlist_dir = ensure_directories_exist(mount_dir)
     
     # Process all playlists
-    process_all_playlists(playlists_dir)
+    process_all_playlists(playlists_dir, mount_dir)
 
 if __name__ == "__main__":
     main()

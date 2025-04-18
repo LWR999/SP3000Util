@@ -3,11 +3,8 @@
 """
 Track-Based SDXC Space Filler
 -----------------------------
-This script uses the track-level data (which should contain paths)
-instead of album-level data to fill the SDXC card.
-
-Updated to better handle special characters in filenames.
-Album limit removed to fill card to capacity.
+This script uses the track-level data to fill the SDXC card.
+Updated to use the new directory structure and handle relative paths.
 """
 
 import os
@@ -21,26 +18,27 @@ from collections import defaultdict
 # Configuration
 NAS_ROOT_CD = "/home/music/drobos/hibiki/Media/Music/Lossless/FLAC 16-Bit CD"
 NAS_ROOT_HIRES = "/home/music/drobos/hibiki/Media/Music/Lossless/FLAC 24-Bit HiRes"
-SDXC_MOUNT = "/mnt/sdcard"
-SDXC_CD = f"{SDXC_MOUNT}/CD"
-SDXC_HIRES = f"{SDXC_MOUNT}/Hires"
-MAX_SIZE = 1000000000000  # 1TB in bytes
+MAX_SIZE = 2000000000000  # 2TB in bytes
 
-def get_sdxc_usage():
+def get_sdxc_usage(mount_dir):
     """Calculate current SDXC card usage"""
+    # New Music directory structure
+    cd_dir = os.path.join(mount_dir, "Music", "CD")
+    hires_dir = os.path.join(mount_dir, "Music", "Hires")
+    
     try:
         total_size = 0
         # Walk through CD directory
-        if os.path.exists(SDXC_CD):
-            for dirpath, dirnames, filenames in os.walk(SDXC_CD):
+        if os.path.exists(cd_dir):
+            for dirpath, dirnames, filenames in os.walk(cd_dir):
                 for f in filenames:
                     fp = os.path.join(dirpath, f)
                     if not os.path.islink(fp):
                         total_size += os.path.getsize(fp)
         
         # Walk through HiRes directory
-        if os.path.exists(SDXC_HIRES):
-            for dirpath, dirnames, filenames in os.walk(SDXC_HIRES):
+        if os.path.exists(hires_dir):
+            for dirpath, dirnames, filenames in os.walk(hires_dir):
                 for f in filenames:
                     fp = os.path.join(dirpath, f)
                     if not os.path.islink(fp):
@@ -51,13 +49,17 @@ def get_sdxc_usage():
         print(f"Error calculating SDXC usage: {e}")
         return 0
 
-def get_copied_albums():
+def get_copied_albums(mount_dir):
     """Get list of albums already on the SDXC card"""
     copied_albums = set()
     
+    # New Music directory structure
+    cd_dir = os.path.join(mount_dir, "Music", "CD")
+    hires_dir = os.path.join(mount_dir, "Music", "Hires")
+    
     # Check CD directory
-    if os.path.exists(SDXC_CD):
-        for root, dirs, files in os.walk(SDXC_CD):
+    if os.path.exists(cd_dir):
+        for root, dirs, files in os.walk(cd_dir):
             # If it has music files, consider it an album directory
             has_music = False
             for f in files:
@@ -66,13 +68,13 @@ def get_copied_albums():
                     break
             
             if has_music:
-                rel_path = os.path.relpath(root, SDXC_CD)
+                rel_path = os.path.relpath(root, cd_dir)
                 nas_path = os.path.join(NAS_ROOT_CD, rel_path)
                 copied_albums.add(nas_path)
     
     # Check HiRes directory
-    if os.path.exists(SDXC_HIRES):
-        for root, dirs, files in os.walk(SDXC_HIRES):
+    if os.path.exists(hires_dir):
+        for root, dirs, files in os.walk(hires_dir):
             # If it has music files, consider it an album directory
             has_music = False
             for f in files:
@@ -81,7 +83,7 @@ def get_copied_albums():
                     break
             
             if has_music:
-                rel_path = os.path.relpath(root, SDXC_HIRES)
+                rel_path = os.path.relpath(root, hires_dir)
                 nas_path = os.path.join(NAS_ROOT_HIRES, rel_path)
                 copied_albums.add(nas_path)
     
@@ -225,7 +227,7 @@ def get_albums_from_tracks(track_file):
     
     return all_albums
 
-def generate_copy_script(albums_to_copy, remaining_space):
+def generate_copy_script(albums_to_copy, remaining_space, mount_dir):
     """Generate a script to copy albums to fill remaining space"""
     if not albums_to_copy:
         print("No albums to copy!")
@@ -244,6 +246,22 @@ def generate_copy_script(albums_to_copy, remaining_space):
         script.write("# Script to fill remaining SDXC space with albums\n")
         script.write(f"# Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         
+        # Define mount directory
+        script.write(f"MOUNT_DIR=\"{mount_dir}\"\n\n")
+        
+        # Check if the SDXC card is mounted
+        script.write("# Check if the SDXC card is mounted\n")
+        script.write("if [ ! -d \"${MOUNT_DIR}\" ]; then\n")
+        script.write("  echo \"Error: Mount directory ${MOUNT_DIR} does not exist\"\n")
+        script.write("  exit 1\n")
+        script.write("fi\n\n")
+        
+        # Create Music directories if they don't exist
+        script.write("# Create Music directories if they don't exist\n")
+        script.write("mkdir -p \"${MOUNT_DIR}/Music/CD\"\n")
+        script.write("mkdir -p \"${MOUNT_DIR}/Music/Hires\"\n")
+        script.write("mkdir -p \"${MOUNT_DIR}/Music/Playlists\"\n\n")
+        
         # Add progress tracking
         script.write("# Track progress\n")
         script.write("TOTAL_ALBUMS=%d\n" % len(albums_to_copy))
@@ -260,13 +278,13 @@ def generate_copy_script(albums_to_copy, remaining_space):
             
             path = album['path']
             
-            # Determine target path
+            # Determine target path in the new Music directory structure
             if path.startswith(NAS_ROOT_HIRES):
                 relative_path = path[len(NAS_ROOT_HIRES):].lstrip('/')
-                target_path = os.path.join(SDXC_HIRES, relative_path)
+                target_path = os.path.join(mount_dir, "Music", "Hires", relative_path)
             else:
                 relative_path = path[len(NAS_ROOT_CD):].lstrip('/')
-                target_path = os.path.join(SDXC_CD, relative_path)
+                target_path = os.path.join(mount_dir, "Music", "CD", relative_path)
             
             # Add copy command
             artist = album['artist'] or album['album_artist'] or "Unknown Artist"
@@ -307,13 +325,21 @@ def generate_copy_script(albums_to_copy, remaining_space):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python tracks-filler.py <tracks_excel> [<album_excel>]")
+        print("Usage: python tracks-filler.py <tracks_excel> [<mount_directory>]")
         sys.exit(1)
     
     track_file = sys.argv[1]
     
+    # Get mount directory from command line or use default
+    mount_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/SP3000Util/mnt")
+    
+    # Ensure the mount directory exists
+    if not os.path.exists(mount_dir):
+        print(f"Error: Mount directory {mount_dir} does not exist")
+        sys.exit(1)
+    
     # Step 1: Get current SDXC usage
-    current_usage = get_sdxc_usage()
+    current_usage = get_sdxc_usage(mount_dir)
     remaining_space = MAX_SIZE - current_usage
     print(f"Current SDXC usage: {current_usage / (1024*1024*1024):.2f} GB")
     print(f"Remaining space: {remaining_space / (1024*1024*1024):.2f} GB")
@@ -323,7 +349,7 @@ def main():
         sys.exit(0)
     
     # Step 2: Get already copied albums
-    copied_albums = get_copied_albums()
+    copied_albums = get_copied_albums(mount_dir)
     
     # Step 3: Get all albums from track data
     all_albums = get_albums_from_tracks(track_file)
@@ -352,7 +378,7 @@ def main():
             print(f"Library path format: '{lib_sample}'")
             print(f"Copied path format: '{copy_sample}'")
         
-        generate_copy_script([], remaining_space)
+        generate_copy_script([], remaining_space, mount_dir)
         sys.exit(0)
     
     # Step 5: Sort albums by criteria (size and play count)
@@ -369,7 +395,7 @@ def main():
     prioritized_albums = smaller_albums + popular_albums
     
     # Step 6: Generate copy script
-    album_count, total_size = generate_copy_script(prioritized_albums, remaining_space)
+    album_count, total_size = generate_copy_script(prioritized_albums, remaining_space, mount_dir)
     
     if album_count > 0:
         print("\nTo fill the remaining space, run:")

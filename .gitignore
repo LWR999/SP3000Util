@@ -1,3 +1,17 @@
-*.pyc
+# Ignore Excel temporary and backup files
+~.xlsx
+*.xlk
+*.xls#
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore any mounted directories
+mnt/
+
+# Python cache files
 __pycache__/
-*.log
+*.pyc
+*.pyo
+*.pyd
