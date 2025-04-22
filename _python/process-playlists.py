@@ -7,7 +7,7 @@ This script:
 1. Looks in the _playlists directory for Excel files
 2. Processes each track in each playlist
 3. Copies the entire album containing each track from NAS to SDXC
-4. Builds M3U files that describe each playlist with relative paths
+4. Builds M3U files that describe each playlist with absolute paths
 """
 
 import os
@@ -128,19 +128,19 @@ def process_playlist_file(playlist_file, mount_dir):
                 title = str(row.get(title_column, "")) if title_column and not pd.isna(row.get(title_column)) else os.path.basename(track_path)
                 artist = str(row.get(artist_column, "")) if artist_column and not pd.isna(row.get(artist_column)) else ""
                 
-                # Map paths from NAS to SDXC - using relative paths for playlists
+                # Map paths from NAS to SDXC - using absolute paths for playlists
                 is_hires = album_path.startswith(NAS_ROOT_HIRES)
                 
                 if is_hires:
                     rel_path = album_path[len(NAS_ROOT_HIRES):].lstrip('/')
                     sdxc_album_path = os.path.join(sdxc_hires, rel_path)
-                    # Create relative path for M3U (relative from Playlists directory)
-                    sdxc_track_path = os.path.join("../Hires", track_path[len(NAS_ROOT_HIRES):].lstrip('/'))
+                    # Create absolute path for M3U
+                    sdxc_track_path = f"/MUSIC_SDXC/Hires/{track_path[len(NAS_ROOT_HIRES):].lstrip('/')}"
                 else:
                     rel_path = album_path[len(NAS_ROOT_CD):].lstrip('/')
                     sdxc_album_path = os.path.join(sdxc_cd, rel_path)
-                    # Create relative path for M3U (relative from Playlists directory)
-                    sdxc_track_path = os.path.join("../CD", track_path[len(NAS_ROOT_CD):].lstrip('/'))
+                    # Create absolute path for M3U
+                    sdxc_track_path = f"/MUSIC_SDXC/CD/{track_path[len(NAS_ROOT_CD):].lstrip('/')}"
                 
                 # Copy album if not already copied
                 if album_path not in copied_albums:
@@ -170,7 +170,7 @@ def process_playlist_file(playlist_file, mount_dir):
                     # Mark album as processed
                     copied_albums.add(album_path)
                 
-                # Add track to playlist with relative path
+                # Add track to playlist with absolute path
                 m3u.write(f"#EXTINF:-1,{artist} - {title}\n")
                 m3u.write(f"{sdxc_track_path}\n")
                 

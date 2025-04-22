@@ -148,6 +148,49 @@ SCRIPT DETAILS
    - Safely unmounts the device when complete
    - Useful for cleaning up a card before adding music or after copying from other systems
 
+6. snapshot-card.sh
+   Purpose: Create a snapshot file of all album paths on an SDXC card.
+   Usage: ./snapshot-card.sh <device_partition>
+   Example: ./snapshot-card.sh /dev/sdc1
+   
+   This script:
+   - Mounts the SD card if not already mounted
+   - Scans the current card to identify all albums present
+   - Creates a snapshot file (sd_snap_DATE_TIME.txt) with paths to all albums
+   - Stores snapshots in the ~/SP3000Util/snapshots directory
+   - Reports the number of CD and HiRes albums found
+
+7. rebuild-sdxc.sh
+   Purpose: Rebuild an SDXC card from a previously created snapshot file.
+   Usage: ./rebuild-sdxc.sh <device_partition> <snapshot_file> [resume]
+   Example: ./rebuild-sdxc.sh /dev/sdc1 ~/SP3000Util/snapshots/sd_snap_20250422_120000.txt
+   Example with resume: ./rebuild-sdxc.sh /dev/sdc1 ~/SP3000Util/snapshots/sd_snap_20250422_120000.txt resume
+   
+   This script:
+   - Mounts the SD card if not already mounted
+   - Reads album paths from the snapshot file
+   - Creates the basic directory structure (Music/CD, Music/Hires, Music/Playlists)
+   - Erases existing content (unless in resume mode)
+   - Copies all albums listed in the snapshot from server to SD card
+   - Uses rsync for efficient copying with progress display
+   - Excludes common clutter files during copying
+
+
+Add these to TYPICAL USAGE SCENARIOS:
+
+Scenario 5: Backing Up Your Optimal Card Setup
+1. ./snapshot-card.sh /dev/sdc1
+   (This creates a snapshot file of all albums on the card)
+
+Scenario 6: Recreating Your Optimal Card Setup
+1. ./rebuild-sdxc.sh /dev/sdc1 ~/SP3000Util/snapshots/sd_snap_YYYYMMDD_HHMMSS.txt
+2. ./create-playlists.sh
+3. Unmount card
+
+Scenario 7: Resuming a Failed Copy Operation
+1. ./rebuild-sdxc.sh /dev/sdc1 ~/SP3000Util/snapshots/sd_snap_YYYYMMDD_HHMMSS.txt resume
+2. ./create-playlists.sh (if needed)
+3. Unmount card
 
 PYTHON SCRIPTS (INSIDE _PYTHON DIRECTORY)
 ---------------------------------------
