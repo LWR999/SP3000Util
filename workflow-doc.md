@@ -53,6 +53,7 @@ The utility has the following directory structure:
 SDXC CARD STRUCTURE
 ------------------
 
+ALWAYS NAME THE SDXC CARD AS "MUSIC_SDXC"
 The SDXC card will be organized as follows:
 
 /Music/
