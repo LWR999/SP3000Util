@@ -17,10 +17,13 @@ For preparing a new SDXC card:
 3. Optionally create genre playlists:
    ./create-playlists.sh
 
-4. Unmount the card:
+4. Optionally clean up clutter files:
+   ./declutter.sh /dev/sdX1
+
+5. Unmount the card:
    sudo umount ~/SP3000Util/mnt
 
-5. Insert into your A&K SP3000 and enjoy!
+6. Insert into your A&K SP3000 and enjoy!
 
 
 DIRECTORY STRUCTURE
@@ -44,6 +47,7 @@ The utility has the following directory structure:
 - create-playlists.sh    : Wrapper script to create genre-based playlists
 - process-playlists.sh   : Wrapper script to process playlist Excel files
 - fill_remaining_space.sh : Generated script for copying files (created by fill-sdxc.sh)
+- declutter.sh           : Script to clean up unwanted files from the SDXC card
 
 
 SDXC CARD STRUCTURE
@@ -128,6 +132,22 @@ SCRIPT DETAILS
    - Uses relative paths in playlist files
    - Saves playlists to /Music/Playlists/
 
+5. declutter.sh
+   Purpose: Clean up clutter files from an SDXC card.
+   Usage: ./declutter.sh <device_partition>
+   Example: ./declutter.sh /dev/sdc1
+   
+   This script:
+   - Mounts the device if not already mounted
+   - Removes the following clutter:
+     * Artwork and artwork folders
+     * Hidden files (starting with ".")
+     * Files with specified extensions (jpg, txt, log, url, png)
+     * Mac Finder metadata files (.DS_Store and others)
+   - Reports the number of files deleted in each category
+   - Safely unmounts the device when complete
+   - Useful for cleaning up a card before adding music or after copying from other systems
+
 
 PYTHON SCRIPTS (INSIDE _PYTHON DIRECTORY)
 ---------------------------------------
@@ -175,13 +195,19 @@ Scenario 2: Full Card with All Features
 2. ./fill-sdxc.sh  (no need to specify device again if already mounted)
 3. ./fill_remaining_space.sh
 4. ./create-playlists.sh
-5. Unmount card
+5. ./declutter.sh  (to remove any unnecessary files)
+6. Unmount card
 
 Scenario 3: Adding New Playlists to Existing Card
 1. Mount card: ./process-playlists.sh /dev/sdc1
 2. Add new Excel files to _playlists directory
 3. Run: ./process-playlists.sh (no need to specify device again)
-4. Unmount card
+4. Optionally run: ./declutter.sh (to clean up any clutter files)
+5. Unmount card
+
+Scenario 4: Cleaning Up a Messy Card
+1. ./declutter.sh /dev/sdc1
+2. Card will be unmounted when complete
 
 
 MOUNTING DETAILS
@@ -227,5 +253,6 @@ ADDITIONAL NOTES
 - The discovery playlist prioritizes tracks with low play counts
 - You can re-run any script to update or refresh content
 - Your original library files remain untouched during this process
+- The declutter.sh script can be run any time to clean up unwanted files from your card
 
 For any issues or questions, refer to the source code or consult your music server administrator.
